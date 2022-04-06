@@ -1,0 +1,6 @@
+alias \
+vi=nvim \
+ni=/home/shahid/opt/nvui-linux-x64/bin/nvui \
+vim=/home/shahid/opt/neovide/target/release/neovide \
+l=ls \
+brave=/home/shahid/opt/brave/brave \

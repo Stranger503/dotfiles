@@ -1,0 +1,766 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://dwm.suckless.org/patches/anybar/dwm-anybar-20200810-bb2e722.diff
+Subject: 
+Date: Mon, 26 Apr 2021 02:47:45 -0000
+MIME-Version: 1.0
+Content-Type: multipart/related;
+	type="text/html";
+	boundary="----MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----"
+
+
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/html
+Content-ID: <frame-2B9DCCA7F5B185652343AB227A9A43FB@mhtml.blink>
+Content-Transfer-Encoding: quoted-printable
+Content-Location: https://dwm.suckless.org/patches/anybar/dwm-anybar-20200810-bb2e722.diff
+
+<html data-darkreader-mode=3D"dynamic" data-darkreader-scheme=3D"dark" clas=
+s=3D" vpjzyyyj idc0_330"><head><meta http-equiv=3D"Content-Type" content=3D=
+"text/html; charset=3Dwindows-1252"><link rel=3D"stylesheet" type=3D"text/c=
+ss" href=3D"cid:css-6c0e5b50-ee8d-4997-a17f-e0b54f67c22c@mhtml.blink" /><li=
+nk rel=3D"stylesheet" type=3D"text/css" href=3D"cid:css-ee4400a3-5916-4a30-=
+94a0-792cdb0b6725@mhtml.blink" /><link rel=3D"stylesheet" type=3D"text/css"=
+ href=3D"cid:css-7d48fdd2-7d44-4a6b-bd87-93d2302cd696@mhtml.blink" /><link =
+rel=3D"stylesheet" type=3D"text/css" href=3D"cid:css-b2286a20-7bd9-4114-9bb=
+0-46b67e50f08d@mhtml.blink" /><link rel=3D"stylesheet" type=3D"text/css" hr=
+ef=3D"cid:css-d0314777-9529-4fc1-9278-5d3ede98e3b1@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-6224e629-d61d-4bf2-9508-f=
+076ef4395a9@mhtml.blink" /><link rel=3D"stylesheet" type=3D"text/css" href=
+=3D"cid:css-fb939a1e-e833-4232-9beb-92f05b2231fb@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-aaa2aa15-c8b6-4690-a5b7-e=
+8bd90971328@mhtml.blink" /><link rel=3D"stylesheet" type=3D"text/css" href=
+=3D"cid:css-29f787c3-6b9b-4d73-9179-c9659b4c109b@mhtml.blink" /><link rel=
+=3D"stylesheet" type=3D"text/css" href=3D"cid:css-044f91b0-35c8-41f8-bd41-9=
+50051d9615a@mhtml.blink" /><meta name=3D"darkreader" content=3D"e2b01066629=
+73cb04b273504f8056e8a"></head><body><pre style=3D"word-wrap: break-word; wh=
+ite-space: pre-wrap;">From 782f63d8f858b1c14df38aaf623438d7ea2f75e1 Mon Sep=
+ 17 00:00:00 2001
+From: mihirlad55 &lt;mihirlad55@gmail.com&gt;
+Date: Mon, 10 Aug 2020 01:39:35 +0000
+Subject: [PATCH] Add support for managing external status bars
+
+This patch allows dwm to manage other status bars such as
+polybar/lemonbar without them needing to set override-redirect. For
+all intents and purposes, DWM treats this bar as if it were its own
+and as a result helps the status bar and DWM live in harmony.
+
+This has a few advantages
+* The bar does not block fullscreen windows
+* DWM makes room for the status bar, so windows do not overlap the bar
+* The bar can be hidden/killed and DWM will not keep an unsightly gap
+  where the bar was
+* DWM receives EnterNotify events when your cursor enters the bar
+
+To use another status bar, set usealtbar to 1 in your config.h and set
+altbarclass to the class name (can be found using xprop) to the class
+name of your status bar. Also make sure that if your status bar will
+be displayed on top, topbar is set to 1 in your config, and if it will
+be displayed on bottom, topbar is set to 0. This patch does not
+support bars that are not docked at the top or at the bottom of your
+monitor.
+
+The patch is developed at https://github.com/mihirlad55/dwm-anybar
+---
+ config.def.h |   3 ++
+ dwm.c        | 114 ++++++++++++++++++++++++++++++++++++++++++++-------
+ 2 files changed, 103 insertions(+), 14 deletions(-)
+
+diff --git a/config.def.h b/config.def.h
+index 1c0b587..d0d60aa 100644
+--- a/config.def.h
++++ b/config.def.h
+@@ -5,6 +5,9 @@ static const unsigned int borderpx  =3D 1;        /* border=
+ pixel of windows */
+ static const unsigned int snap      =3D 32;       /* snap pixel */
+ static const int showbar            =3D 1;        /* 0 means no bar */
+ static const int topbar             =3D 1;        /* 0 means bottom bar */
++static const int usealtbar          =3D 1;        /* 1 means use non-dwm s=
+tatus bar */
++static const char *altbarclass      =3D "Polybar"; /* Alternate bar class =
+name */
++static const char *altbarcmd        =3D "$HOME/bar.sh"; /* Alternate bar l=
+aunch command */
+ static const char *fonts[]          =3D { "monospace:size=3D10" };
+ static const char dmenufont[]       =3D "monospace:size=3D10";
+ static const char col_gray1[]       =3D "#222222";
+diff --git a/dwm.c b/dwm.c
+index 9fd0286..f149ab4 100644
+--- a/dwm.c
++++ b/dwm.c
+@@ -47,8 +47,8 @@
+ /* macros */
+ #define BUTTONMASK              (ButtonPressMask|ButtonReleaseMask)
+ #define CLEANMASK(mask)         (mask &amp; ~(numlockmask|LockMask) &amp; =
+(ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
+-#define INTERSECT(x,y,w,h,m)    (MAX(0, MIN((x)+(w),(m)-&gt;wx+(m)-&gt;ww)=
+ - MAX((x),(m)-&gt;wx)) \
+-                               * MAX(0, MIN((y)+(h),(m)-&gt;wy+(m)-&gt;wh)=
+ - MAX((y),(m)-&gt;wy)))
++#define INTERSECT(x,y,w,h,m)    (MAX(0, MIN((x)+(w),(m)-&gt;mx+(m)-&gt;mw)=
+ - MAX((x),(m)-&gt;mx)) \
++                               * MAX(0, MIN((y)+(h),(m)-&gt;my+(m)-&gt;mh)=
+ - MAX((y),(m)-&gt;my)))
+ #define ISVISIBLE(C)            ((C-&gt;tags &amp; C-&gt;mon-&gt;tagset[C-=
+&gt;mon-&gt;seltags]))
+ #define LENGTH(X)               (sizeof X / sizeof X[0])
+ #define MOUSEMASK               (BUTTONMASK|PointerMotionMask)
+@@ -116,7 +116,7 @@ struct Monitor {
+ 	float mfact;
+ 	int nmaster;
+ 	int num;
+-	int by;               /* bar geometry */
++	int by, bh;           /* bar geometry */
+ 	int mx, my, mw, mh;   /* screen size */
+ 	int wx, wy, ww, wh;   /* window area  */
+ 	unsigned int seltags;
+@@ -179,6 +179,7 @@ static void incnmaster(const Arg *arg);
+ static void keypress(XEvent *e);
+ static void killclient(const Arg *arg);
+ static void manage(Window w, XWindowAttributes *wa);
++static void managealtbar(Window win, XWindowAttributes *wa);
+ static void mappingnotify(XEvent *e);
+ static void maprequest(XEvent *e);
+ static void monocle(Monitor *m);
+@@ -207,6 +208,7 @@ static void seturgent(Client *c, int urg);
+ static void showhide(Client *c);
+ static void sigchld(int unused);
+ static void spawn(const Arg *arg);
++static void spawnbar();
+ static void tag(const Arg *arg);
+ static void tagmon(const Arg *arg);
+ static void tile(Monitor *);
+@@ -216,6 +218,7 @@ static void toggletag(const Arg *arg);
+ static void toggleview(const Arg *arg);
+ static void unfocus(Client *c, int setfocus);
+ static void unmanage(Client *c, int destroyed);
++static void unmanagealtbar(Window w);
+ static void unmapnotify(XEvent *e);
+ static void updatebarpos(Monitor *m);
+ static void updatebars(void);
+@@ -230,6 +233,7 @@ static void updatewmhints(Client *c);
+ static void view(const Arg *arg);
+ static Client *wintoclient(Window w);
+ static Monitor *wintomon(Window w);
++static int wmclasscontains(Window win, const char *class, const char *name=
+);
+ static int xerror(Display *dpy, XErrorEvent *ee);
+ static int xerrordummy(Display *dpy, XErrorEvent *ee);
+ static int xerrorstart(Display *dpy, XErrorEvent *ee);
+@@ -505,8 +509,10 @@ cleanupmon(Monitor *mon)
+ 		for (m =3D mons; m &amp;&amp; m-&gt;next !=3D mon; m =3D m-&gt;next);
+ 		m-&gt;next =3D mon-&gt;next;
+ 	}
+-	XUnmapWindow(dpy, mon-&gt;barwin);
+-	XDestroyWindow(dpy, mon-&gt;barwin);
++	if (!usealtbar) {
++		XUnmapWindow(dpy, mon-&gt;barwin);
++		XDestroyWindow(dpy, mon-&gt;barwin);
++	}
+ 	free(mon);
+ }
+=20
+@@ -568,7 +574,7 @@ configurenotify(XEvent *e)
+ 				for (c =3D m-&gt;clients; c; c =3D c-&gt;next)
+ 					if (c-&gt;isfullscreen)
+ 						resizeclient(c, m-&gt;mx, m-&gt;my, m-&gt;mw, m-&gt;mh);
+-				XMoveResizeWindow(dpy, m-&gt;barwin, m-&gt;wx, m-&gt;by, m-&gt;ww, bh)=
+;
++				XMoveResizeWindow(dpy, m-&gt;barwin, m-&gt;wx, m-&gt;by, m-&gt;ww, m-&=
+gt;bh);
+ 			}
+ 			focus(NULL);
+ 			arrange(NULL);
+@@ -639,6 +645,7 @@ createmon(void)
+ 	m-&gt;nmaster =3D nmaster;
+ 	m-&gt;showbar =3D showbar;
+ 	m-&gt;topbar =3D topbar;
++	m-&gt;bh =3D bh;
+ 	m-&gt;lt[0] =3D &amp;layouts[0];
+ 	m-&gt;lt[1] =3D &amp;layouts[1 % LENGTH(layouts)];
+ 	strncpy(m-&gt;ltsymbol, layouts[0].symbol, sizeof m-&gt;ltsymbol);
+@@ -649,10 +656,13 @@ void
+ destroynotify(XEvent *e)
+ {
+ 	Client *c;
++	Monitor *m;
+ 	XDestroyWindowEvent *ev =3D &amp;e-&gt;xdestroywindow;
+=20
+ 	if ((c =3D wintoclient(ev-&gt;window)))
+ 		unmanage(c, 1);
++	else if ((m =3D wintomon(ev-&gt;window)) &amp;&amp; m-&gt;barwin =3D=3D e=
+v-&gt;window)
++		unmanagealtbar(ev-&gt;window);
+ }
+=20
+ void
+@@ -696,6 +706,9 @@ dirtomon(int dir)
+ void
+ drawbar(Monitor *m)
+ {
++	if (usealtbar)
++		return;
++
+ 	int x, w, tw =3D 0;
+ 	int boxs =3D drw-&gt;fonts-&gt;h / 9;
+ 	int boxw =3D drw-&gt;fonts-&gt;h / 6 + 2;
+@@ -1077,6 +1090,25 @@ manage(Window w, XWindowAttributes *wa)
+ 	focus(NULL);
+ }
+=20
++void
++managealtbar(Window win, XWindowAttributes *wa)
++{
++	Monitor *m;
++	if (!(m =3D recttomon(wa-&gt;x, wa-&gt;y, wa-&gt;width, wa-&gt;height)))
++		return;
++
++	m-&gt;barwin =3D win;
++	m-&gt;by =3D wa-&gt;y;
++	bh =3D m-&gt;bh =3D wa-&gt;height;
++	updatebarpos(m);
++	arrange(m);
++	XSelectInput(dpy, win, EnterWindowMask|FocusChangeMask|PropertyChangeMask=
+|StructureNotifyMask);
++	XMoveResizeWindow(dpy, win, wa-&gt;x, wa-&gt;y, wa-&gt;width, wa-&gt;heig=
+ht);
++	XMapWindow(dpy, win);
++	XChangeProperty(dpy, root, netatom[NetClientList], XA_WINDOW, 32, PropMod=
+eAppend,
++		(unsigned char *) &amp;win, 1);
++}
++
+ void
+ mappingnotify(XEvent *e)
+ {
+@@ -1097,7 +1129,9 @@ maprequest(XEvent *e)
+ 		return;
+ 	if (wa.override_redirect)
+ 		return;
+-	if (!wintoclient(ev-&gt;window))
++	if (wmclasscontains(ev-&gt;window, altbarclass, ""))
++		managealtbar(ev-&gt;window, &amp;wa);
++	else if (!wintoclient(ev-&gt;window))
+ 		manage(ev-&gt;window, &amp;wa);
+ }
+=20
+@@ -1393,7 +1427,9 @@ scan(void)
+ 			if (!XGetWindowAttributes(dpy, wins[i], &amp;wa)
+ 			|| wa.override_redirect || XGetTransientForHint(dpy, wins[i], &amp;d1))
+ 				continue;
+-			if (wa.map_state =3D=3D IsViewable || getstate(wins[i]) =3D=3D IconicSt=
+ate)
++			if (wmclasscontains(wins[i], altbarclass, ""))
++				managealtbar(wins[i], &amp;wa);
++			else if (wa.map_state =3D=3D IsViewable || getstate(wins[i]) =3D=3D Ico=
+nicState)
+ 				manage(wins[i], &amp;wa);
+ 		}
+ 		for (i =3D 0; i &lt; num; i++) { /* now the transients */
+@@ -1546,7 +1582,7 @@ setup(void)
+ 	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
+ 		die("no fonts could be loaded.");
+ 	lrpad =3D drw-&gt;fonts-&gt;h;
+-	bh =3D drw-&gt;fonts-&gt;h + 2;
++	bh =3D usealtbar ? 0 : drw-&gt;fonts-&gt;h + 2;
+ 	updategeom();
+ 	/* init atoms */
+ 	utf8string =3D XInternAtom(dpy, "UTF8_STRING", False);
+@@ -1595,6 +1631,7 @@ setup(void)
+ 	XSelectInput(dpy, root, wa.event_mask);
+ 	grabkeys();
+ 	focus(NULL);
++	spawnbar();
+ }
+=20
+=20
+@@ -1653,6 +1690,13 @@ spawn(const Arg *arg)
+ 	}
+ }
+=20
++void
++spawnbar()
++{
++	if (*altbarcmd)
++		system(altbarcmd);
++}
++
+ void
+ tag(const Arg *arg)
+ {
+@@ -1704,7 +1748,7 @@ togglebar(const Arg *arg)
+ {
+ 	selmon-&gt;showbar =3D !selmon-&gt;showbar;
+ 	updatebarpos(selmon);
+-	XMoveResizeWindow(dpy, selmon-&gt;barwin, selmon-&gt;wx, selmon-&gt;by, s=
+elmon-&gt;ww, bh);
++	XMoveResizeWindow(dpy, selmon-&gt;barwin, selmon-&gt;wx, selmon-&gt;by, s=
+elmon-&gt;ww, selmon-&gt;bh);
+ 	arrange(selmon);
+ }
+=20
+@@ -1787,10 +1831,26 @@ unmanage(Client *c, int destroyed)
+ 	arrange(m);
+ }
+=20
++void
++unmanagealtbar(Window w)
++{
++    Monitor *m =3D wintomon(w);
++
++    if (!m)
++        return;
++
++    m-&gt;barwin =3D 0;
++    m-&gt;by =3D 0;
++    m-&gt;bh =3D 0;
++    updatebarpos(m);
++    arrange(m);
++}
++
+ void
+ unmapnotify(XEvent *e)
+ {
+ 	Client *c;
++	Monitor *m;
+ 	XUnmapEvent *ev =3D &amp;e-&gt;xunmap;
+=20
+ 	if ((c =3D wintoclient(ev-&gt;window))) {
+@@ -1798,12 +1858,16 @@ unmapnotify(XEvent *e)
+ 			setclientstate(c, WithdrawnState);
+ 		else
+ 			unmanage(c, 0);
+-	}
++	} else if ((m =3D wintomon(ev-&gt;window)) &amp;&amp; m-&gt;barwin =3D=3D=
+ ev-&gt;window)
++		unmanagealtbar(ev-&gt;window);
+ }
+=20
+ void
+ updatebars(void)
+ {
++	if (usealtbar)
++		return;
++
+ 	Monitor *m;
+ 	XSetWindowAttributes wa =3D {
+ 		.override_redirect =3D True,
+@@ -1829,11 +1893,11 @@ updatebarpos(Monitor *m)
+ 	m-&gt;wy =3D m-&gt;my;
+ 	m-&gt;wh =3D m-&gt;mh;
+ 	if (m-&gt;showbar) {
+-		m-&gt;wh -=3D bh;
++		m-&gt;wh -=3D m-&gt;bh;
+ 		m-&gt;by =3D m-&gt;topbar ? m-&gt;wy : m-&gt;wy + m-&gt;wh;
+-		m-&gt;wy =3D m-&gt;topbar ? m-&gt;wy + bh : m-&gt;wy;
++		m-&gt;wy =3D m-&gt;topbar ? m-&gt;wy + m-&gt;bh : m-&gt;wy;
+ 	} else
+-		m-&gt;by =3D -bh;
++		m-&gt;by =3D -m-&gt;bh;
+ }
+=20
+ void
+@@ -2077,6 +2141,28 @@ wintomon(Window w)
+ 	return selmon;
+ }
+=20
++int
++wmclasscontains(Window win, const char *class, const char *name)
++{
++	XClassHint ch =3D { NULL, NULL };
++	int res =3D 1;
++
++	if (XGetClassHint(dpy, win, &amp;ch)) {
++		if (ch.res_name &amp;&amp; strstr(ch.res_name, name) =3D=3D NULL)
++			res =3D 0;
++		if (ch.res_class &amp;&amp; strstr(ch.res_class, class) =3D=3D NULL)
++			res =3D 0;
++	} else
++		res =3D 0;
++
++	if (ch.res_class)
++		XFree(ch.res_class);
++	if (ch.res_name)
++		XFree(ch.res_name);
++
++	return res;
++}
++
+ /* There's no way to check accesses to destroyed windows, thus those cases=
+ are
+  * ignored (especially on UnmapNotify's). Other types of errors call Xlibs
+  * default error handler, which may call exit. */
+--=20
+2.28.0
+
+</pre></body></html>
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-6c0e5b50-ee8d-4997-a17f-e0b54f67c22c@mhtml.blink
+
+@charset "utf-8";
+=0A
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-ee4400a3-5916-4a30-94a0-792cdb0b6725@mhtml.blink
+
+@charset "utf-8";
+=0A
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-7d48fdd2-7d44-4a6b-bd87-93d2302cd696@mhtml.blink
+
+@charset "utf-8";
+
+.jfk-bubble.gtx-bubble, .captcheck_answer_label > input + img, span#closed_=
+text > img[src^=3D"https://www.gstatic.com/images/branding/googlelogo"], sp=
+an[data-href^=3D"https://www.hcaptcha.com/"] > #icon, #bit-notification-bar=
+-iframe, embed[type=3D"application/pdf"], [src=3D"dwm.svg"], [src=3D"st.svg=
+"], [src=3D"core.svg"], [src=3D"surf.svg"], [src=3D"blind.svg"], [src=3D"fa=
+rbfeld.svg"], [src=3D"quark.svg"], [src=3D"sent-bullets-s.png"], [src=3D"sl=
+status.svg"] { filter: invert(100%) hue-rotate(180deg) contrast(90%) !impor=
+tant; }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-b2286a20-7bd9-4114-9bb0-46b67e50f08d@mhtml.blink
+
+@charset "utf-8";
+
+[data-darkreader-inline-bgcolor] { background-color: var(--darkreader-inlin=
+e-bgcolor)  !important; }
+
+[data-darkreader-inline-bgimage] { background-image: var(--darkreader-inlin=
+e-bgimage)  !important; }
+
+[data-darkreader-inline-border] { border-color: var(--darkreader-inline-bor=
+der)  !important; }
+
+[data-darkreader-inline-border-bottom] { border-bottom-color: var(--darkrea=
+der-inline-border-bottom)  !important; }
+
+[data-darkreader-inline-border-left] { border-left-color: var(--darkreader-=
+inline-border-left)  !important; }
+
+[data-darkreader-inline-border-right] { border-right-color: var(--darkreade=
+r-inline-border-right)  !important; }
+
+[data-darkreader-inline-border-top] { border-top-color: var(--darkreader-in=
+line-border-top)  !important; }
+
+[data-darkreader-inline-boxshadow] { box-shadow: var(--darkreader-inline-bo=
+xshadow)  !important; }
+
+[data-darkreader-inline-color] { color: var(--darkreader-inline-color)  !im=
+portant; }
+
+[data-darkreader-inline-fill] { fill: var(--darkreader-inline-fill)  !impor=
+tant; }
+
+[data-darkreader-inline-stroke] { stroke: var(--darkreader-inline-stroke)  =
+!important; }
+
+[data-darkreader-inline-outline] { outline-color: var(--darkreader-inline-o=
+utline)  !important; }
+
+[data-darkreader-inline-stopcolor] { stop-color: var(--darkreader-inline-st=
+opcolor)  !important; }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-d0314777-9529-4fc1-9278-5d3ede98e3b1@mhtml.blink
+
+@charset "utf-8";
+
+:root { --darkreader-neutral-background: #131516; --darkreader-neutral-text=
+: #d8d4cf; --darkreader-selection-background: #004daa; --darkreader-selecti=
+on-text: #e8e6e3; }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-6224e629-d61d-4bf2-9508-f076ef4395a9@mhtml.blink
+
+@charset "utf-8";
+
+:root { }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-fb939a1e-e833-4232-9beb-92f05b2231fb@mhtml.blink
+
+@charset "utf-8";
+
+html { background-color: rgb(24, 26, 27) !important; }
+
+html, body, input, textarea, select, button { background-color: rgb(24, 26,=
+ 27); }
+
+html, body, input, textarea, select, button { border-color: rgb(115, 107, 9=
+4); color: rgb(232, 230, 227); }
+
+a { color: rgb(51, 145, 255); }
+
+table { border-color: rgb(84, 91, 94); }
+
+::placeholder { color: rgb(178, 171, 161); }
+
+input:-webkit-autofill, textarea:-webkit-autofill, select:-webkit-autofill =
+{ background-color: rgb(85, 91, 0) !important; color: rgb(232, 230, 227) !i=
+mportant; }
+
+::-webkit-scrollbar { background-color: rgb(32, 35, 36); color: rgb(171, 16=
+4, 153); }
+
+::-webkit-scrollbar-thumb { background-color: rgb(69, 74, 77); }
+
+::-webkit-scrollbar-thumb:hover { background-color: rgb(87, 94, 98); }
+
+::-webkit-scrollbar-thumb:active { background-color: rgb(72, 78, 81); }
+
+::-webkit-scrollbar-corner { background-color: rgb(24, 26, 27); }
+
+::selection { background-color: rgb(0, 77, 170) !important; color: rgb(232,=
+ 230, 227) !important; }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-aaa2aa15-c8b6-4690-a5b7-e8bd90971328@mhtml.blink
+
+@charset "utf-8";
+
+.vimvixen-hint { background-color: rgb(123, 83, 0) !important; border-color=
+: rgb(216, 176, 19) !important; color: rgb(243, 232, 200) !important; }
+
+::placeholder { opacity: 0.5 !important; }
+
+a[href=3D"https://coinmarketcap.com/"] > svg[width=3D"94"][height=3D"16"] >=
+ path { fill: var(--darkreader-neutral-text)  !important; }
+
+#edge-translate-panel-body { color: var(--darkreader-neutral-text)  !import=
+ant; }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-29f787c3-6b9b-4d73-9179-c9659b4c109b@mhtml.blink
+
+@charset "windows-1252";
+
+#ctre_wnd { position: fixed; bottom: 0px; right: 10px; width: 360px; paddin=
+g: 10px 20px; box-sizing: content-box; text-align: left; font-family: Helve=
+tica, Arial, sans-serif; background: rgb(255, 255, 255); box-shadow: rgba(0=
+, 0, 0, 0.15) 0px 0px 40px; z-index: 2147483647; font-size: 12px; color: rg=
+b(102, 102, 102); }
+
+#ctre_wnd * { line-height: 1.3; font-size: inherit; color: inherit; font-we=
+ight: normal; font-style: normal; font-family: inherit; cursor: default; }
+
+#ctre_wnd a, #ctre_wnd input[type=3D"checkbox"] { cursor: pointer; }
+
+#ctre_wnd .ct_minimize, #ctre_wnd .ct_close { display: block; cursor: point=
+er; position: absolute; top: 0px; right: 0px; width: 32px; line-height: 32p=
+x; font-size: 14px; text-align: center; transition: color 0.3s ease 0s, bac=
+kground 0.3s ease 0s; }
+
+#ctre_wnd .ct_minimize { right: 32px; background: rgb(255, 255, 255); color=
+: rgb(15, 180, 212); }
+
+#ctre_wnd .ct_minimize:hover { background: rgb(15, 180, 212); color: rgb(25=
+5, 255, 255); }
+
+#ctre_wnd .ct_minimize i { display: inline-block; cursor: pointer; transfor=
+m: rotate(45deg); transition: transform 0.5s ease 0s; }
+
+#ctre_wnd .ct_close { color: rgb(255, 0, 0); background: rgb(255, 240, 240)=
+; }
+
+#ctre_wnd .ct_close:hover { color: rgb(255, 255, 255); background: rgb(255,=
+ 0, 0); }
+
+#ctre_wnd .key { display: inline-block; font-family: monospace; background:=
+ rgb(247, 247, 247); color: rgb(153, 153, 153); padding: 0px 2px; margin: 0=
+px 2px; border: 1px solid rgb(213, 213, 213); border-radius: 3px; }
+
+#ctre_wnd .ct_logo { font-size: 15px; font-weight: bold; }
+
+#ctre_wnd .ct_logo.small { display: none; }
+
+#ctre_wnd .ct_logo svg { fill: rgb(102, 102, 102); vertical-align: -15%; tr=
+ansform: rotate(-240deg); transition: transform 1s ease 0s; }
+
+#ctre_wnd .ct_logo.anim svg { transform: rotate(0deg); }
+
+#ctre_wnd .version { color: rgb(187, 187, 187); }
+
+#ctre_wnd .keys { font-size: 11px; overflow: hidden; margin-top: 4px; color=
+: rgb(187, 187, 187); }
+
+#ctre_wnd .ct_settings { font-size: 11px; overflow: hidden; margin: 8px 0px=
+; color: rgb(187, 187, 187); }
+
+#ctre_wnd .ct_settings a { color: rgb(153, 153, 153); }
+
+#ctre_wnd .ct_settings a:hover { color: rgb(102, 102, 102); }
+
+#ctre_wnd .activationKeys { float: left; margin-left: -2px; }
+
+#ctre_wnd .transposeKeys { float: right; }
+
+#ctre_current_elm { font-family: monospace; background: rgb(247, 247, 247);=
+ color: rgb(213, 213, 213); padding: 2px; margin: 10px 0px; max-height: 84p=
+x; overflow: hidden; }
+
+#ctre_current_elm .pathNode { color: rgb(153, 153, 153); border-bottom: 2px=
+ solid rgba(0, 0, 0, 0); }
+
+#ctre_current_elm .pathNode.active { border-bottom: 2px solid rgb(85, 85, 8=
+5); }
+
+#ctre_elm_list { display: none; margin: 0px -20px; background: rgb(247, 247=
+, 247); border-style: solid; border-color: rgb(247, 247, 247); border-image=
+: initial; border-width: 12px 0px; max-height: 90px; overflow: auto; }
+
+#ctre_elm_list.hasContent { display: block; }
+
+#ctre_elm_list table { border: 0px; width: 100%; border-spacing: 0px; }
+
+#ctre_elm_list tr { border: 0px; }
+
+#ctre_elm_list tr.ct_heading td { color: rgb(187, 187, 187); }
+
+#ctre_elm_list td { padding: 0px; border: 0px; background: rgb(247, 247, 24=
+7); }
+
+#ctre_elm_list tr:nth-child(2n) td { background: rgb(252, 252, 252); }
+
+#ctre_elm_list td:nth-child(1) { padding-left: 20px; }
+
+#ctre_elm_list td:nth-child(2) { text-align: center; }
+
+#ctre_elm_list td:nth-child(3) { padding-right: 20px; }
+
+#ctre_elm_list tr:not(.ct_heading) td:nth-child(1) { font-family: monospace=
+; font-size: 11px; }
+
+#ctre_elm_list td input { display: inline; appearance: checkbox; }
+
+#ctre_elm_list td input::before, #ctre_elm_list td input::after { content: =
+none; }
+
+#ctre_elm_list .ct_edit_selector { font-family: sans-serif; float: right; o=
+pacity: 0; color: rgb(15, 180, 212); text-decoration: none; }
+
+#ctre_elm_list .ct_edit_selector:hover { color: rgb(0, 0, 0); }
+
+#ctre_elm_list tr:hover .ct_edit_selector { opacity: 1; }
+
+#ctre_elm_list a.ct_delete { color: rgb(255, 0, 0); padding: 4px; text-deco=
+ration: none; font-size: 14px; }
+
+#ctre_elm_list a.ct_delete:hover { color: rgb(255, 255, 255); background: r=
+gb(255, 0, 0); }
+
+#ctre_wnd .ct_more { border-top: 1px solid rgb(247, 247, 247); margin: 0px =
+-20px; padding-top: 12px; color: rgb(187, 187, 187); font-size: 10px; text-=
+align: center; }
+
+#ctre_wnd .ct_more a { color: rgb(15, 180, 212); font-size: inherit; text-d=
+ecoration: none; transition: color 0.5s ease 0s; }
+
+#ctre_wnd .ct_more a:hover { color: rgb(0, 0, 0); }
+
+#ctre_wnd.minimized { width: 80px; height: 12px; }
+
+#ctre_wnd.minimized > * { display: none; }
+
+#ctre_wnd.minimized .ct_minimize, #ctre_wnd.minimized .ct_close { display: =
+block; }
+
+#ctre_wnd.minimized .ct_minimize i { display: inline-block; transform: rota=
+te(-135deg); }
+
+#ctre_wnd.minimized .ct_logo.small { display: block; margin: -4px 0px 0px -=
+10px; }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u----
+Content-Type: text/css
+Content-Transfer-Encoding: quoted-printable
+Content-Location: cid:css-044f91b0-35c8-41f8-bd41-950051d9615a@mhtml.blink
+
+@charset "windows-1252";
+
+#ctre_wnd { background-image: initial; background-color: rgb(24, 26, 27); b=
+ox-shadow: rgba(0, 0, 0, 0.15) 0px 0px 40px; color: rgb(168, 160, 149); }
+
+#ctre_wnd * { color: inherit; }
+
+#ctre_wnd .ct_minimize { background-image: initial; background-color: rgb(2=
+4, 26, 27); color: rgb(59, 212, 241); }
+
+#ctre_wnd .ct_minimize:hover { background-image: initial; background-color:=
+ rgb(12, 144, 170); color: rgb(232, 230, 227); }
+
+#ctre_wnd .ct_close { color: rgb(255, 26, 26); background-image: initial; b=
+ackground-color: rgb(60, 0, 0); }
+
+#ctre_wnd .ct_close:hover { color: rgb(232, 230, 227); background-image: in=
+itial; background-color: rgb(204, 0, 0); }
+
+#ctre_wnd .key { background-image: initial; background-color: rgb(29, 31, 3=
+2); color: rgb(168, 160, 149); border-color: rgb(60, 65, 67); }
+
+#ctre_wnd .ct_logo svg { fill: rgb(168, 160, 149); }
+
+#ctre_wnd .version { color: rgb(189, 183, 175); }
+
+#ctre_wnd .keys { color: rgb(189, 183, 175); }
+
+#ctre_wnd .ct_settings { color: rgb(189, 183, 175); }
+
+#ctre_wnd .ct_settings a { color: rgb(168, 160, 149); }
+
+#ctre_wnd .ct_settings a:hover { color: rgb(168, 160, 149); }
+
+#ctre_current_elm { background-image: initial; background-color: rgb(29, 31=
+, 32); color: rgb(205, 201, 195); }
+
+#ctre_current_elm .pathNode { color: rgb(168, 160, 149); border-bottom-colo=
+r: rgba(140, 130, 115, 0); }
+
+#ctre_current_elm .pathNode.active { border-bottom-color: rgb(112, 104, 92)=
+; }
+
+#ctre_elm_list { background-image: initial; background-color: rgb(29, 31, 3=
+2); border-color: rgb(50, 54, 57); }
+
+#ctre_elm_list table { border-color: initial; }
+
+#ctre_elm_list tr { border-color: initial; }
+
+#ctre_elm_list tr.ct_heading td { color: rgb(189, 183, 175); }
+
+#ctre_elm_list td { border-color: initial; background-image: initial; backg=
+round-color: rgb(29, 31, 32); }
+
+#ctre_elm_list tr:nth-child(2n) td { background-image: initial; background-=
+color: rgb(26, 28, 29); }
+
+#ctre_elm_list .ct_edit_selector { color: rgb(59, 212, 241); text-decoratio=
+n-color: initial; }
+
+#ctre_elm_list .ct_edit_selector:hover { color: rgb(232, 230, 227); }
+
+#ctre_elm_list a.ct_delete { color: rgb(255, 26, 26); text-decoration-color=
+: initial; }
+
+#ctre_elm_list a.ct_delete:hover { color: rgb(232, 230, 227); background-im=
+age: initial; background-color: rgb(204, 0, 0); }
+
+#ctre_wnd .ct_more { border-top-color: rgb(50, 54, 57); color: rgb(189, 183=
+, 175); }
+
+#ctre_wnd .ct_more a { color: rgb(59, 212, 241); text-decoration-color: ini=
+tial; }
+
+#ctre_wnd .ct_more a:hover { color: rgb(232, 230, 227); }
+------MultipartBoundary--lrj7qxBBoppO1Q6njsLt3EgbaeJNOmGyWa5kIdvr7u------
